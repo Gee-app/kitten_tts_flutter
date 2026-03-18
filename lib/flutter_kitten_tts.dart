@@ -4,4 +4,4 @@
 library;
 
 export 'src/kitten_tts.dart' show KittenTTS, kittenVoices;
-export 'src/model_manager.dart' show ModelManager;
+export 'src/model_manager.dart' show ModelManager, KittenModelVariant;

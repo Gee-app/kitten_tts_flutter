@@ -48,13 +48,16 @@ const Map<String, double> _speedPriors = {
 /// Generated audio is PCM Float32 at 24 kHz.
 ///
 /// ```dart
-/// final tts = KittenTTS();
+/// final tts = KittenTTS(variant: KittenModelVariant.mini);
 /// await tts.initialize();
 /// final audio = await tts.generate('Hello world', voice: 'Jasper');
 /// // audio is Float32List PCM at 24 000 Hz
 /// ```
 class KittenTTS {
-  final ModelManager _modelManager = ModelManager();
+  final ModelManager _modelManager;
+
+  KittenTTS({KittenModelVariant variant = KittenModelVariant.nano})
+      : _modelManager = ModelManager(variant: variant);
   final Phonemizer _phonemizer = Phonemizer();
   final TextPreprocessor _preprocessor = TextPreprocessor();
   final TextCleaner _cleaner = TextCleaner();

@@ -5,17 +5,59 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+/// KittenTTS v0.8 model size variants.
+enum KittenModelVariant {
+  /// nano int8 — ~24 MB, 15M params
+  nano,
+
+  /// micro — ~40 MB, improved quality over nano
+  micro,
+
+  /// mini — ~78 MB, highest quality, 248K downloads
+  mini,
+}
+
+extension _KittenModelVariantInfo on KittenModelVariant {
+  String get hfRepo {
+    switch (this) {
+      case KittenModelVariant.nano:
+        return 'KittenML/kitten-tts-nano-0.8-int8';
+      case KittenModelVariant.micro:
+        return 'KittenML/kitten-tts-micro-0.8';
+      case KittenModelVariant.mini:
+        return 'KittenML/kitten-tts-mini-0.8';
+    }
+  }
+
+  String get onnxFileName {
+    switch (this) {
+      case KittenModelVariant.nano:
+        return 'kitten_tts_nano_v0_8.onnx';
+      case KittenModelVariant.micro:
+        return 'kitten_tts_micro_v0_8.onnx';
+      case KittenModelVariant.mini:
+        return 'kitten_tts_mini_v0_8.onnx';
+    }
+  }
+
+  String get dirName => hfRepo.split('/').last;
+
+  String get hfBase =>
+      'https://huggingface.co/$hfRepo/resolve/main';
+}
+
 /// Downloads and manages KittenTTS model files from HuggingFace.
 class ModelManager {
-  static const _hfBase =
-      'https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main';
-  static const _modelDirName = 'kitten-tts-nano-0.8-int8';
   static const _readyMarker = '.ready';
+
+  final KittenModelVariant variant;
+
+  ModelManager({this.variant = KittenModelVariant.nano});
 
   String? _modelDir;
 
   String get modelDir => _modelDir ?? '';
-  String get modelPath => p.join(modelDir, 'kitten_tts_nano_v0_8.onnx');
+  String get modelPath => p.join(modelDir, variant.onnxFileName);
   String get voicesPath => p.join(modelDir, 'voices.npz');
   String get espeakDataPath => p.join(modelDir, 'espeak-ng-data');
 
@@ -37,20 +79,20 @@ class ModelManager {
       return;
     }
 
-    // Download model ONNX file (~24 MB)
+    // Download model ONNX file
     await _downloadIfMissing(
-      fileName: 'kitten_tts_nano_v0_8.onnx',
-      url: '$_hfBase/kitten_tts_nano_v0_8.onnx',
+      fileName: variant.onnxFileName,
+      url: '${variant.hfBase}/${variant.onnxFileName}',
       dir: dir.path,
       progressBase: 0.0,
       progressRange: 0.5,
       onProgress: onProgress,
     );
 
-    // Download voices NPZ file (~3.3 MB)
+    // Download voices NPZ file
     await _downloadIfMissing(
       fileName: 'voices.npz',
-      url: '$_hfBase/voices.npz',
+      url: '${variant.hfBase}/voices.npz',
       dir: dir.path,
       progressBase: 0.5,
       progressRange: 0.15,
@@ -163,7 +205,7 @@ class ModelManager {
 
   Future<Directory> _getModelDir() async {
     final appDir = await getApplicationSupportDirectory();
-    final dir = Directory(p.join(appDir.path, 'kitten_tts', _modelDirName));
+    final dir = Directory(p.join(appDir.path, 'kitten_tts', variant.dirName));
     if (!dir.existsSync()) await dir.create(recursive: true);
     _modelDir = dir.path;
     return dir;
