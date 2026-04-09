@@ -58,6 +58,13 @@ class KittenTTS {
 
   KittenTTS({KittenModelVariant variant = KittenModelVariant.nano})
       : _modelManager = ModelManager(variant: variant);
+
+  /// Creates a [KittenTTS] instance from a model name string.
+  ///
+  /// [model] is case-insensitive and must be one of `'nano'`, `'micro'`, or `'mini'`.
+  /// Useful when the model name is stored as a string in config or preferences.
+  KittenTTS.fromName(String model)
+      : _modelManager = ModelManager(variant: KittenModelVariant.fromName(model));
   final Phonemizer _phonemizer = Phonemizer();
   final TextPreprocessor _preprocessor = TextPreprocessor();
   final TextCleaner _cleaner = TextCleaner();
