@@ -85,8 +85,13 @@ class KittenTTS {
   ///
   /// Downloads model files (~35 MB total) on first run and caches them.
   /// [onProgress] reports `(0.0–1.0, status message)`.
+  /// [intraOpNumThreads] limits the number of threads ONNX Runtime uses for
+  /// inference within a single operator (e.g. matrix multiply). Defaults to
+  /// all available cores when `null`. Set to 2 on mobile to leave CPU headroom
+  /// for the UI thread.
   Future<void> initialize({
     void Function(double progress, String status)? onProgress,
+    int? intraOpNumThreads,
   }) async {
     if (_initialized) return;
 
@@ -102,7 +107,13 @@ class KittenTTS {
     // 3. Load ONNX session
     onProgress?.call(0.97, 'Loading ONNX model...');
     final ort = OnnxRuntime();
-    _session = await ort.createSession(_modelManager.modelPath);
+    final sessionOptions = intraOpNumThreads != null
+        ? OrtSessionOptions(intraOpNumThreads: intraOpNumThreads)
+        : null;
+    _session = await ort.createSession(
+      _modelManager.modelPath,
+      options: sessionOptions,
+    );
     debugPrint('[KittenTTS] session inputs : ${_session!.inputNames}');
     debugPrint('[KittenTTS] session outputs: ${_session!.outputNames}');
 
