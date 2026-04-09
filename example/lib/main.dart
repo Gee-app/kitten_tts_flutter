@@ -38,7 +38,7 @@ class TTSScreen extends StatefulWidget {
 }
 
 class _TTSScreenState extends State<TTSScreen> {
-  final KittenTTS _tts = KittenTTS();
+  final KittenTTS _tts = KittenTTS(variant: KittenModelVariant.mini);
   final TextEditingController _textCtrl = TextEditingController(
     text:
         'Hello! This is KittenTTS, a high-quality offline text-to-speech engine. '

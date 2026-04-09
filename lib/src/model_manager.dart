@@ -14,7 +14,25 @@ enum KittenModelVariant {
   micro,
 
   /// mini — ~78 MB, highest quality, 248K downloads
-  mini,
+  mini;
+
+  /// Parses a case-insensitive model name string into a [KittenModelVariant].
+  ///
+  /// Accepts `'nano'`, `'micro'`, or `'mini'`.
+  /// Throws [ArgumentError] for unrecognised values.
+  static KittenModelVariant fromName(String name) {
+    switch (name.toLowerCase().trim()) {
+      case 'nano':
+        return KittenModelVariant.nano;
+      case 'micro':
+        return KittenModelVariant.micro;
+      case 'mini':
+        return KittenModelVariant.mini;
+      default:
+        throw ArgumentError.value(
+            name, 'name', 'Unknown KittenModelVariant. Use nano, micro, or mini.');
+    }
+  }
 }
 
 extension _KittenModelVariantInfo on KittenModelVariant {
