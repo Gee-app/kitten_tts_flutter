@@ -48,4 +48,18 @@ High-quality offline text-to-speech using the KittenML v0.8 ONNX model with espe
   s.dependency 'Flutter'
   s.platform = :ios, '16.0'
   s.swift_version = '5.0'
+
+  # Export espeak-ng symbols to the dynamic symbol table so dart:ffi can find
+  # them via DynamicLibrary.process() / dlsym(RTLD_DEFAULT). Without this the
+  # symbols are linked into the binary but not exported, causing FFI lookups
+  # to fail in release/profile (AOT) builds.
+  s.user_target_xcconfig = {
+    'OTHER_LDFLAGS' => [
+      '-Wl,-exported_symbol,_espeak_Initialize',
+      '-Wl,-exported_symbol,_espeak_SetVoiceByName',
+      '-Wl,-exported_symbol,_espeak_TextToPhonemes',
+      '-Wl,-exported_symbol,_espeak_Terminate',
+      '-Wl,-exported_symbol,_espeak_Info',
+    ].join(' '),
+  }
 end

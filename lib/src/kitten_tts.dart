@@ -197,16 +197,20 @@ class KittenTTS {
     required double speed,
   }) async {
     // ── Text cleaning ──
+    print('[KittenTTS-DIAG] _generateChunk START: "${text.length > 40 ? text.substring(0, 40) : text}"');
     final clean = _preprocessor.process(text);
     final withPunct = _addTrailingPunctuation(clean);
     debugPrint('[KittenTTS] cleaned: "${_trunc(withPunct)}"');
 
     // ── Phonemization ──
+    print('[KittenTTS-DIAG] pre-phonemize');
     final phonemes = _phonemizer.phonemize(withPunct);
+    print('[KittenTTS-DIAG] post-phonemize: ${phonemes.length} chars');
     debugPrint('[KittenTTS] phonemes: "${_trunc(phonemes)}"');
 
     // ── Token mapping ──
     final tokens = _cleaner.encodeWithBoundary(phonemes);
+    print('[KittenTTS-DIAG] tokens: ${tokens.length}');
     debugPrint('[KittenTTS] tokens: ${tokens.length}');
 
     // ── Guard: split if tokens exceed model capacity ──
@@ -257,21 +261,26 @@ class KittenTTS {
     final effectiveSpeed = speed * prior;
 
     // ── ONNX inference ──
+    print('[KittenTTS-DIAG] pre-OrtValue.fromList (inputIds)');
     final inputIds = await OrtValue.fromList(Int64List.fromList(tokens), [
       1,
       tokens.length,
     ]);
+    print('[KittenTTS-DIAG] pre-OrtValue.fromList (style)');
     final styleTensor = await OrtValue.fromList(style.toList(), [
       1,
       style.length,
     ]);
+    print('[KittenTTS-DIAG] pre-OrtValue.fromList (speed)');
     final speedTensor = await OrtValue.fromList([effectiveSpeed], [1]);
 
+    print('[KittenTTS-DIAG] pre-session.run()');
     final outputs = await _session!.run({
       'input_ids': inputIds,
       'style': styleTensor,
       'speed': speedTensor,
     });
+    print('[KittenTTS-DIAG] post-session.run() — ${outputs.length} outputs');
 
     // Dispose inputs
     await inputIds.dispose();
