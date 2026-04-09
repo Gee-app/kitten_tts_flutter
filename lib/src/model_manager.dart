@@ -7,8 +7,11 @@ import 'package:path_provider/path_provider.dart';
 
 /// KittenTTS v0.8 model size variants.
 enum KittenModelVariant {
-  /// nano int8 — ~24 MB, 15M params
+  /// nano int8 — ~25 MB, 15M params
   nano,
+
+  /// nano fp32 — ~56 MB, 15M params, full precision
+  nanoFp32,
 
   /// micro — ~40 MB, improved quality over nano
   micro,
@@ -18,19 +21,24 @@ enum KittenModelVariant {
 
   /// Parses a case-insensitive model name string into a [KittenModelVariant].
   ///
-  /// Accepts `'nano'`, `'micro'`, or `'mini'`.
+  /// Accepts `'nano'`, `'nano_fp32'`, `'micro'`, or `'mini'`.
   /// Throws [ArgumentError] for unrecognised values.
   static KittenModelVariant fromName(String name) {
     switch (name.toLowerCase().trim()) {
       case 'nano':
         return KittenModelVariant.nano;
+      case 'nano_fp32':
+        return KittenModelVariant.nanoFp32;
       case 'micro':
         return KittenModelVariant.micro;
       case 'mini':
         return KittenModelVariant.mini;
       default:
         throw ArgumentError.value(
-            name, 'name', 'Unknown KittenModelVariant. Use nano, micro, or mini.');
+          name,
+          'name',
+          'Unknown KittenModelVariant. Use nano, nano_fp32, micro, or mini.',
+        );
     }
   }
 }
@@ -40,6 +48,8 @@ extension _KittenModelVariantInfo on KittenModelVariant {
     switch (this) {
       case KittenModelVariant.nano:
         return 'KittenML/kitten-tts-nano-0.8-int8';
+      case KittenModelVariant.nanoFp32:
+        return 'KittenML/kitten-tts-nano-0.8-fp32';
       case KittenModelVariant.micro:
         return 'KittenML/kitten-tts-micro-0.8';
       case KittenModelVariant.mini:
@@ -51,6 +61,8 @@ extension _KittenModelVariantInfo on KittenModelVariant {
     switch (this) {
       case KittenModelVariant.nano:
         return 'kitten_tts_nano_v0_8.onnx';
+      case KittenModelVariant.nanoFp32:
+        return 'kitten_tts_nano_v0_8.onnx';
       case KittenModelVariant.micro:
         return 'kitten_tts_micro_v0_8.onnx';
       case KittenModelVariant.mini:
@@ -60,8 +72,7 @@ extension _KittenModelVariantInfo on KittenModelVariant {
 
   String get dirName => hfRepo.split('/').last;
 
-  String get hfBase =>
-      'https://huggingface.co/$hfRepo/resolve/main';
+  String get hfBase => 'https://huggingface.co/$hfRepo/resolve/main';
 }
 
 /// Downloads and manages KittenTTS model files from HuggingFace.
