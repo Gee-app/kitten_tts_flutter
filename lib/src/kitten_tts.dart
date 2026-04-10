@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 
@@ -107,15 +109,37 @@ class KittenTTS {
     // 3. Load ONNX session
     onProgress?.call(0.97, 'Loading ONNX model...');
     final ort = OnnxRuntime();
-    final sessionOptions = intraOpNumThreads != null
-        ? OrtSessionOptions(intraOpNumThreads: intraOpNumThreads)
-        : null;
-    _session = await ort.createSession(
-      _modelManager.modelPath,
-      options: sessionOptions,
+    // Select execution providers based on platform for hardware acceleration.
+    // CoreML delegates to the Apple Neural Engine / GPU on iOS & macOS.
+    // NNAPI delegates to the NPU/GPU on Android.
+    // CPU is always appended as fallback for unsupported ops.
+    List<OrtProvider> providers;
+    if (!kIsWeb && (Platform.isIOS || Platform.isMacOS)) {
+      providers = [OrtProvider.CORE_ML, OrtProvider.CPU];
+    } else if (!kIsWeb && Platform.isAndroid) {
+      providers = [OrtProvider.NNAPI, OrtProvider.CPU];
+    } else {
+      providers = [OrtProvider.CPU];
+    }
+    final sessionOptions = OrtSessionOptions(
+      intraOpNumThreads: intraOpNumThreads,
+      providers: providers,
     );
-    debugPrint('[KittenTTS] session inputs : ${_session!.inputNames}');
-    debugPrint('[KittenTTS] session outputs: ${_session!.outputNames}');
+    try {
+      _session = await ort.createSession(
+        _modelManager.modelPath,
+        options: sessionOptions,
+      );
+    } catch (e) {
+      // Hardware accelerator failed (e.g. CoreML/NNAPI incompatible with model).
+      // Retry with CPU-only.
+      debugPrint('[KittenTTS] Accelerated session failed ($e), retrying with CPU only');
+      final cpuOptions = OrtSessionOptions(intraOpNumThreads: intraOpNumThreads);
+      _session = await ort.createSession(
+        _modelManager.modelPath,
+        options: cpuOptions,
+      );
+    }
 
     // 4. Load voice embeddings
     _voices = NpzReader.fromFile(_modelManager.voicesPath);
