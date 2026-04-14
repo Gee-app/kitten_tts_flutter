@@ -49,12 +49,35 @@ High-quality offline text-to-speech using the KittenML v0.8 ONNX model with espe
   s.platform = :ios, '16.0'
   s.swift_version = '5.0'
 
-  # Export espeak-ng symbols to the dynamic symbol table so dart:ffi can find
-  # them via DynamicLibrary.process() / dlsym(RTLD_DEFAULT). Without this the
-  # symbols are linked into the binary but not exported, causing FFI lookups
-  # to fail in release/profile (AOT) builds.
+  # ── espeak-ng FFI symbol visibility ──────────────────────────────────────────
+  #
+  # The Dart side uses DynamicLibrary.process() → dlsym(RTLD_DEFAULT, ...) to
+  # find espeak_* C symbols at runtime.  Two problems arise when this plugin is
+  # consumed as a static framework (use_frameworks! :linkage => :static):
+  #
+  # 1. The linker only pulls .o files from a static archive when they resolve an
+  #    *undefined* symbol.  Since no Swift/ObjC code calls espeak_*, those
+  #    objects are never loaded → dlsym fails.
+  #    Fix: -Wl,-u,_espeak_<sym> marks each symbol as a required undefined,
+  #    forcing the linker to pull the corresponding object from the archive.
+  #
+  # 2. Even once linked, symbols aren't necessarily in the dynamic export trie
+  #    that dlsym searches.
+  #    Fix: -Wl,-exported_symbol,_espeak_<sym> explicitly adds them.
+  #
+  # NOTE: In Flutter Debug builds on iOS, these flags reach the separate
+  # Runner.debug.dylib link step and switch the linker into explicit-export
+  # mode, hiding Dart entry-point symbols → SIGABRT.  Host apps must strip
+  # these flags from the Debug xcconfig (see README / Podfile example).
   s.user_target_xcconfig = {
     'OTHER_LDFLAGS' => [
+      # Force-link the espeak objects from the static archive
+      '-Wl,-u,_espeak_Initialize',
+      '-Wl,-u,_espeak_SetVoiceByName',
+      '-Wl,-u,_espeak_TextToPhonemes',
+      '-Wl,-u,_espeak_Terminate',
+      '-Wl,-u,_espeak_Info',
+      # Export them so DynamicLibrary.process() / dlsym can find them
       '-Wl,-exported_symbol,_espeak_Initialize',
       '-Wl,-exported_symbol,_espeak_SetVoiceByName',
       '-Wl,-exported_symbol,_espeak_TextToPhonemes',
