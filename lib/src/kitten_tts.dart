@@ -59,14 +59,14 @@ class KittenTTS {
   final ModelManager _modelManager;
 
   KittenTTS({KittenModelVariant variant = KittenModelVariant.nano})
-      : _modelManager = ModelManager(variant: variant);
+    : _modelManager = ModelManager(variant: variant);
 
   /// Creates a [KittenTTS] instance from a model name string.
   ///
   /// [model] is case-insensitive and must be one of `'nano'`, `'micro'`, or `'mini'`.
   /// Useful when the model name is stored as a string in config or preferences.
   KittenTTS.fromName(String model)
-      : _modelManager = ModelManager(variant: KittenModelVariant.fromName(model));
+    : _modelManager = ModelManager(variant: KittenModelVariant.fromName(model));
   final Phonemizer _phonemizer = Phonemizer();
   final TextPreprocessor _preprocessor = TextPreprocessor();
   final TextCleaner _cleaner = TextCleaner();
@@ -133,8 +133,12 @@ class KittenTTS {
     } catch (e) {
       // Hardware accelerator failed (e.g. CoreML/NNAPI incompatible with model).
       // Retry with CPU-only.
-      debugPrint('[KittenTTS] Accelerated session failed ($e), retrying with CPU only');
-      final cpuOptions = OrtSessionOptions(intraOpNumThreads: intraOpNumThreads);
+      debugPrint(
+        '[KittenTTS] Hardware accelerated session not supported or failed, fallback with CPU only.',
+      );
+      final cpuOptions = OrtSessionOptions(
+        intraOpNumThreads: intraOpNumThreads,
+      );
       _session = await ort.createSession(
         _modelManager.modelPath,
         options: cpuOptions,
