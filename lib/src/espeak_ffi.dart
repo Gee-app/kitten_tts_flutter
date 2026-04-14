@@ -1,6 +1,7 @@
 import 'dart:ffi';
 import 'dart:io';
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 typedef _EspeakInitializeC =
     Int32 Function(
@@ -50,8 +51,11 @@ class EspeakFfi {
   void load() {
     if (_loaded) return;
 
+    debugPrint('[EspeakFfi] load() — platform=${Platform.operatingSystem}');
+
     if (Platform.isIOS || Platform.isMacOS) {
       _lib = DynamicLibrary.process();
+      debugPrint('[EspeakFfi] using DynamicLibrary.process() (static link)');
     } else if (Platform.isAndroid) {
       _lib = DynamicLibrary.open('libespeak-ng.so');
     } else if (Platform.isLinux) {
@@ -61,6 +65,37 @@ class EspeakFfi {
     } else {
       throw UnsupportedError(
         'espeak-ng not supported on ${Platform.operatingSystem}',
+      );
+    }
+
+    // ── Probe every symbol individually so diagnostics show ALL missing ones.
+    // On iOS/TestFlight the static library may have been stripped of espeak
+    // symbols at link time. We want to know which specific symbols are absent.
+    const symbols = [
+      'espeak_Initialize',
+      'espeak_SetVoiceByName',
+      'espeak_TextToPhonemes',
+      'espeak_Terminate',
+      'espeak_Info',
+    ];
+    final missing = <String>[];
+    for (final sym in symbols) {
+      try {
+        _lib!.lookup<NativeType>(sym);
+        debugPrint('[EspeakFfi] ✅ symbol present: $sym');
+      } catch (e) {
+        debugPrint('[EspeakFfi] ❌ symbol MISSING: $sym — $e');
+        missing.add(sym);
+      }
+    }
+    if (missing.isNotEmpty) {
+      throw StateError(
+        'espeak-ng symbols not found in binary (static link missing). '
+        'Missing: ${missing.join(', ')}. '
+        'All probed: ${symbols.join(', ')}. '
+        'This indicates the espeak-ng object files were stripped at link '
+        'time (Release/TestFlight build without -Wl,-u linker flags). '
+        'Fix: add -Wl,-u,_<symbol> to the plugin podspec user_target_xcconfig.',
       );
     }
 
@@ -80,6 +115,7 @@ class EspeakFfi {
       'espeak_Terminate',
     );
 
+    debugPrint('[EspeakFfi] all symbols loaded successfully');
     _loaded = true;
   }
 
