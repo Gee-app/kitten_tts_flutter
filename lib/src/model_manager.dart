@@ -81,7 +81,23 @@ class ModelManager {
 
   final KittenModelVariant variant;
 
-  ModelManager({this.variant = KittenModelVariant.nano});
+  /// Base URL of your Cloudflare R2 bucket for model file fallback.
+  /// When set, the ONNX model and voices.npz fall back here if HuggingFace
+  /// fails. Expected layout: `$r2BaseUrl/{variant.dirName}/{filename}`.
+  /// Example: `'https://pub-xxxx.r2.dev/kitten-tts'`
+  final String? r2BaseUrl;
+
+  /// Full URL of the espeak-ng-data tarball on R2.
+  /// When set, R2 is used as the **primary** eSpeak-NG source; the original
+  /// k2-fsa GitHub release is kept as a last-resort fallback.
+  /// Example: `'https://pub-xxxx.r2.dev/espeak-ng-data.tar.bz2'`
+  final String? r2EspeakUrl;
+
+  ModelManager({
+    this.variant = KittenModelVariant.nano,
+    this.r2BaseUrl,
+    this.r2EspeakUrl,
+  });
 
   String? _modelDir;
 
@@ -112,6 +128,9 @@ class ModelManager {
     await _downloadIfMissing(
       fileName: variant.onnxFileName,
       url: '${variant.hfBase}/${variant.onnxFileName}',
+      fallbackUrl: r2BaseUrl != null
+          ? '$r2BaseUrl/${variant.dirName}/${variant.onnxFileName}'
+          : null,
       dir: dir.path,
       progressBase: 0.0,
       progressRange: 0.5,
@@ -122,6 +141,9 @@ class ModelManager {
     await _downloadIfMissing(
       fileName: 'voices.npz',
       url: '${variant.hfBase}/voices.npz',
+      fallbackUrl: r2BaseUrl != null
+          ? '$r2BaseUrl/${variant.dirName}/voices.npz'
+          : null,
       dir: dir.path,
       progressBase: 0.5,
       progressRange: 0.15,
@@ -139,6 +161,7 @@ class ModelManager {
   Future<void> _downloadIfMissing({
     required String fileName,
     required String url,
+    String? fallbackUrl,
     required String dir,
     required double progressBase,
     required double progressRange,
@@ -151,41 +174,62 @@ class ModelManager {
     }
 
     onProgress?.call(progressBase, 'Downloading $fileName...');
-    debugPrint('[ModelManager] Downloading $url');
 
-    final client = http.Client();
-    try {
-      final request = http.Request('GET', Uri.parse(url))
-        ..followRedirects = true
-        ..maxRedirects = 5;
-      final response = await client.send(request);
-      if (response.statusCode != 200) {
-        throw Exception(
-          'Download $fileName failed: HTTP ${response.statusCode}',
-        );
-      }
+    final urls = [url, if (fallbackUrl != null) fallbackUrl];
+    Exception? lastError;
 
-      final total = response.contentLength ?? 0;
-      final file = File(filePath);
-      final sink = file.openWrite();
-      var received = 0;
-
-      await for (final chunk in response.stream) {
-        sink.add(chunk);
-        received += chunk.length;
-        if (total > 0) {
-          final fileProgress = received / total;
-          final overall = progressBase + fileProgress * progressRange;
-          onProgress?.call(
-            overall,
-            'Downloading $fileName... ${(fileProgress * 100).toStringAsFixed(0)}%',
+    for (final downloadUrl in urls) {
+      debugPrint('[ModelManager] Downloading $downloadUrl');
+      final client = http.Client();
+      try {
+        final request = http.Request('GET', Uri.parse(downloadUrl))
+          ..followRedirects = true
+          ..maxRedirects = 5;
+        final response = await client.send(request);
+        if (response.statusCode != 200) {
+          lastError = Exception(
+            'Download $fileName failed: HTTP ${response.statusCode} from $downloadUrl',
           );
+          debugPrint(
+            '[ModelManager] HTTP ${response.statusCode} from $downloadUrl'
+            '${urls.length > 1 && downloadUrl != urls.last ? " — trying fallback" : ""}',
+          );
+          await response.stream.drain<void>();
+          continue;
         }
+
+        final total = response.contentLength ?? 0;
+        final file = File(filePath);
+        final sink = file.openWrite();
+        var received = 0;
+
+        await for (final chunk in response.stream) {
+          sink.add(chunk);
+          received += chunk.length;
+          if (total > 0) {
+            final fileProgress = received / total;
+            final overall = progressBase + fileProgress * progressRange;
+            onProgress?.call(
+              overall,
+              'Downloading $fileName... ${(fileProgress * 100).toStringAsFixed(0)}%',
+            );
+          }
+        }
+        await sink.close();
+        return; // success
+      } catch (e) {
+        lastError = Exception('Download $fileName from $downloadUrl: $e');
+        debugPrint('[ModelManager] Error from $downloadUrl: $e');
+        // Clean up any partial write before trying the next URL.
+        try {
+          File(filePath).deleteSync();
+        } catch (_) {}
+      } finally {
+        client.close();
       }
-      await sink.close();
-    } finally {
-      client.close();
     }
+
+    throw lastError ?? Exception('Download $fileName failed: no URLs succeeded');
   }
 
   Future<void> _ensureEspeakData(
@@ -199,32 +243,54 @@ class ModelManager {
     }
 
     onProgress?.call(0.7, 'Downloading espeak-ng data...');
-    const espeakUrl =
-        'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2';
 
-    final client = http.Client();
-    Uint8List archiveBytes;
-    try {
-      final request = http.Request('GET', Uri.parse(espeakUrl))
-        ..followRedirects = true
-        ..maxRedirects = 5;
-      final response = await client.send(request);
-      final chunks = <int>[];
-      final total = response.contentLength ?? 0;
-      var received = 0;
-      await for (final chunk in response.stream) {
-        chunks.addAll(chunk);
-        received += chunk.length;
-        if (total > 0) {
-          onProgress?.call(
-            0.7 + (received / total) * 0.15,
-            'Downloading espeak-ng data... ${(received / total * 100).toStringAsFixed(0)}%',
+    // R2 is the sole source for eSpeak-NG data (we host it, no third-party dependency).
+    final urls = [
+      if (r2EspeakUrl != null) r2EspeakUrl!
+      else 'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2',
+    ];
+
+    Uint8List? archiveBytes;
+    for (final url in urls) {
+      final client = http.Client();
+      try {
+        debugPrint('[ModelManager] Downloading espeak-ng data from $url');
+        final request = http.Request('GET', Uri.parse(url))
+          ..followRedirects = true
+          ..maxRedirects = 5;
+        final response = await client.send(request);
+        if (response.statusCode != 200) {
+          debugPrint(
+            '[ModelManager] HTTP ${response.statusCode} from $url'
+            '${url != urls.last ? " — trying fallback" : ""}',
           );
+          await response.stream.drain<void>();
+          continue;
         }
+        final chunks = <int>[];
+        final total = response.contentLength ?? 0;
+        var received = 0;
+        await for (final chunk in response.stream) {
+          chunks.addAll(chunk);
+          received += chunk.length;
+          if (total > 0) {
+            onProgress?.call(
+              0.7 + (received / total) * 0.15,
+              'Downloading espeak-ng data... ${(received / total * 100).toStringAsFixed(0)}%',
+            );
+          }
+        }
+        archiveBytes = Uint8List.fromList(chunks);
+        break; // success
+      } catch (e) {
+        debugPrint('[ModelManager] Failed to fetch espeak-ng data from $url: $e');
+      } finally {
+        client.close();
       }
-      archiveBytes = Uint8List.fromList(chunks);
-    } finally {
-      client.close();
+    }
+
+    if (archiveBytes == null) {
+      throw Exception('Failed to download espeak-ng data from all sources');
     }
 
     onProgress?.call(0.9, 'Extracting espeak-ng data...');
